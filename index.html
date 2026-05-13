@@ -1343,7 +1343,7 @@ async function sbSaveLibrary(items) {
 }
 async function sbLoadLibrary() {
   try {
-    const { data } = await _sb.from('library').select('items').eq('id', USER_ID).single();
+    const { data } = await _sb.from('library').select('items').eq('id', USER_ID).maybeSingle();
     return data ? JSON.parse(data.items) : null;
   } catch(e) { return null; }
 }
@@ -1354,7 +1354,7 @@ async function sbSaveProfile(p) {
 }
 async function sbLoadProfile() {
   try {
-    const { data } = await _sb.from('profile').select('*').eq('id', USER_ID).single();
+    const { data } = await _sb.from('profile').select('*').eq('id', USER_ID).maybeSingle();
     return data ? { username: data.username, joinDate: data.join_date, avatar: data.avatar, tags: data.tags ? JSON.parse(data.tags) : [] } : null;
   } catch(e) { return null; }
 }

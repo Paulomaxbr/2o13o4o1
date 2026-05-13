@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -1289,20 +1288,31 @@ async function loginWithGoogle() {
 }
 
 async function logout() {
-  await _sb.auth.signOut();
+  try {
+    await _sb.auth.signOut();
+  } catch(e) { console.warn('signOut:', e); }
   USER_ID = null;
   currentUser = null;
-  document.getElementById('login-overlay').style.display = 'flex';
-  document.getElementById('header-user').style.display = 'none';
   items = [];
   userTags = [];
+  feedItems = [];
+  feedDisplayItems = [];
+  feedBlobs = {};
   profile = { username: 'Otaku', joinDate: new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }) };
+  localStorage.removeItem('otakulist_items');
+  localStorage.removeItem('otakulist_profile');
+  localStorage.removeItem('otakulist_tags');
+  localStorage.removeItem('otakulist_uid');
+  document.getElementById('login-overlay').style.display = 'flex';
+  document.getElementById('header-user').style.display = 'none';
   renderProfile();
+  renderGrid();
 }
 
 function showApp(user) {
   currentUser = user;
-  USER_ID = user.id;
+  USER_ID = user.id; // ID real do Supabase Auth
+  localStorage.setItem('otakulist_uid', USER_ID); // salva para consistência
   document.getElementById('login-overlay').style.display = 'none';
   document.getElementById('header-user').style.display = 'flex';
   document.getElementById('header-avatar').src = user.user_metadata?.avatar_url || '';
@@ -1313,10 +1323,15 @@ function showApp(user) {
 _sb.auth.onAuthStateChange(async (event, session) => {
   if (session && session.user) {
     showApp(session.user);
-    await syncFromSupabase();
-    await openFeedDB().then(db => { feedDB = db; return feedLoadAll(); }).then(() => syncFeedFromSupabase());
     renderProfile();
-  } else {
+    // Sync em background sem travar a UI
+    setTimeout(async () => {
+      try {
+        await syncFromSupabase();
+        await syncFeedFromSupabase();
+      } catch(e) { console.warn('sync error:', e); }
+    }, 300);
+  } else if (event === 'SIGNED_OUT' || !session) {
     document.getElementById('login-overlay').style.display = 'flex';
     document.getElementById('header-user').style.display = 'none';
   }
@@ -1698,6 +1713,7 @@ function save() {
 
 // ── SYNC INICIAL ──
 async function syncFromSupabase() {
+  if (!USER_ID) return;
   showToast('Sincronizando...');
   const [cloudLib, cloudProfile] = await Promise.all([sbLoadLibrary(), sbLoadProfile()]);
   if (cloudLib !== null) {

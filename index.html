@@ -1421,10 +1421,30 @@ function showApp(user) {
 }
 
 // Escuta mudanças de auth
+let _lastUserId = null;
 _sb.auth.onAuthStateChange(async (event, session) => {
   if (session && session.user) {
+    const incomingId = session.user.id;
+
+    // Se trocou de conta, limpa todo o estado do usuário anterior
+    if (_lastUserId && _lastUserId !== incomingId) {
+      items = [];
+      userTags = [];
+      feedItems = [];
+      feedDisplayItems = [];
+      feedBlobs = {};
+      profile = { username: 'Otaku', joinDate: new Date().toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }) };
+      localStorage.removeItem('otakulist_items');
+      localStorage.removeItem('otakulist_profile');
+      localStorage.removeItem('otakulist_tags');
+      renderGrid();
+      renderFeed();
+    }
+
+    _lastUserId = incomingId;
     showApp(session.user);
     renderProfile();
+
     // Sync em background sem travar a UI
     setTimeout(async () => {
       try {
@@ -1433,14 +1453,14 @@ _sb.auth.onAuthStateChange(async (event, session) => {
       } catch(e) { console.warn('sync error:', e); }
     }, 300);
   } else if (event === 'SIGNED_OUT' || !session) {
+    _lastUserId = null;
     document.getElementById('login-overlay').style.display = 'flex';
     document.getElementById('header-user').style.display = 'none';
   }
 });
 
 async function sbSaveLibrary(items) {
-  if (!USER_ID) return;
-  try { await _sb.from('library').upsert({ id: USER_ID, items: JSON.stringify(items) }, { onConflict: 'id' }); }
+  try { await _sb.from('library').upsert({ id: USER_ID, items: JSON.stringify(items) }); }
   catch(e) { console.warn('sbSaveLibrary:', e); }
 }
 async function sbLoadLibrary() {
@@ -1451,8 +1471,7 @@ async function sbLoadLibrary() {
 }
 
 async function sbSaveProfile(p) {
-  if (!USER_ID) return;
-  try { await _sb.from('profile').upsert({ id: USER_ID, username: p.username, join_date: p.joinDate, avatar: p.avatar || null, tags: JSON.stringify(p.tags || []), banner_color: p.bannerColor || null, name_color: p.nameColor || null }, { onConflict: 'id' }); }
+  try { await _sb.from('profile').upsert({ id: USER_ID, username: p.username, join_date: p.joinDate, avatar: p.avatar || null, tags: JSON.stringify(p.tags || []), banner_color: p.bannerColor || null, name_color: p.nameColor || null }); }
   catch(e) { console.warn('sbSaveProfile:', e); }
 }
 async function sbLoadProfile() {
@@ -2165,9 +2184,9 @@ let feedTagFilter = 'todos'; // 'todos' | 'imagem' | 'video' | 'tag:nome'
 let userTags = JSON.parse(localStorage.getItem('otakulist_tags') || '[]');
 let itemTagEditing = null;  // id do item sendo editado
 
-async function saveTags() {
+function saveTags() {
   localStorage.setItem('otakulist_tags', JSON.stringify(userTags));
-  await sbSaveProfile({ ...profile, tags: userTags });
+  sbSaveProfile({ ...profile, tags: userTags });
 }
 
 // Abre (ou cria) o banco IndexedDB
@@ -2516,13 +2535,13 @@ function renderAllTagsList() {
   `).join('');
 }
 
-async function createTag() {
+function createTag() {
   const input = document.getElementById('new-tag-input');
   const val = input.value.trim().toLowerCase();
   if (!val) return;
   if (userTags.includes(val)) { showToast('Tag já existe!'); return; }
   userTags.push(val);
-  await saveTags();
+  saveTags();
   input.value = '';
   renderAllTagsList();
   showToast('Tag "' + val + '" criada!');
@@ -2531,7 +2550,7 @@ async function createTag() {
 async function deleteTag(tag) {
   if (!confirm('Apagar a tag "' + tag + '"? Ela será removida de todas as mídias.')) return;
   userTags = userTags.filter(t => t !== tag);
-  await saveTags();
+  saveTags();
   // Remove de todos os itens
   for (const item of feedItems) {
     if (item.tags && item.tags.includes(tag)) {
